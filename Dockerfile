@@ -3,6 +3,7 @@ FROM python:3.11-slim
 # Systemupdates und Sicherheitsfixes
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates \
+    gettext \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # vdirsyncer installieren
