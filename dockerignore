@@ -1,7 +1,15 @@
-__pycache__/
+# Config-Verzeichnis wird gemountet, nicht ins Image kopieren
+/config/*
+
+# Temporäre Dateien und Logs
 *.pyc
 *.pyo
 *.pyd
+__pycache__/
+*.log
 .env
-config/vdirsyncer/status/
-config/vdirsyncer/cache/
+
+# Git-Metadaten müssen nicht ins Image
+.git
+.gitattributes
+.gitignore

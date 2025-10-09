@@ -1,0 +1,19 @@
+[general]
+status_path = /config/status/
+
+[pair icloud-synology]
+a = iCloud
+b = Synology
+collections = ["from a", "from b"]
+
+[storage iCloud]
+type = caldav
+url = https://caldav.icloud.com/
+username = ${APPLE_ID}
+password = ${APPLE_APP_PASSWORD}
+
+[storage Synology]
+type = caldav
+url = ${SYNOLGY_CALDAV_URL}
+username = ${SYNOLGY_USER}
+password = ${SYNOLGY_PASSWORD}

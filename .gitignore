@@ -1,0 +1,11 @@
+# Config, Status, Logs, lokale Dateien nicht ins Repo
+/config/*
+!config.template
+
+# Python / vdirsyncer Cache
+*.pyc
+__pycache__/
+*.log
+
+# Sonstige sensible Daten
+.env
