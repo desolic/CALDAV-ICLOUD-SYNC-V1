@@ -93,14 +93,21 @@ if ! command -v vdirsyncer &> /dev/null; then
 fi
 
 # Einmalige Discovery durchführen, falls Status-Ordner leer ist
-if [ -z "$(ls -A "$STATUS_DIR")" ]; then
-    echo "🔍 Führe einmalige Discovery durch..." | tee -a "$LOG_FILE"
-    if vdirsyncer discover icloud_synology 2>&1 | tee -a "$LOG_FILE"; then
-        echo "✅ Discovery erfolgreich abgeschlossen" | tee -a "$LOG_FILE"
-    else
-        echo "❌ Discovery fehlgeschlagen" | tee -a "$LOG_FILE"
-        exit 1
-    fi
+echo "🔍 Einmalige Discovery gestartet..." | tee -a "$LOG_FILE"
+
+# Discovery ausführen und Output zwischenspeichern
+DISCOVER_OUTPUT=$(vdirsyncer discover icloud_synology 2>&1)
+DISCOVER_EXIT_CODE=$?
+
+# Output immer ins Log schreiben
+echo "$DISCOVER_OUTPUT" | tee -a "$LOG_FILE"
+
+# Prüfen auf Errors im Output
+if [ $DISCOVER_EXIT_CODE -eq 0 ] && ! echo "$DISCOVER_OUTPUT" | grep -qE '^(critical:|error:)'; then
+    echo "✅ Discovery erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
+else
+    echo "❌ Discovery fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
+    echo "⚠️ Bitte Fehlerausgabe prüfen" | tee -a "$LOG_FILE"
 fi
 
 # Bidirektionalen Sync starten
