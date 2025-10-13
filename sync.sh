@@ -98,15 +98,8 @@ echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE
 while true; do
     echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
 
-    # Sync ausführen, Output zwischenspeichern
-    SYNC_OUTPUT=$(vdirsyncer sync icloud_synology 2>&1)
-    SYNC_EXIT_CODE=$?
-
-    # Ausgabe immer ins Log schreiben
-    echo "$SYNC_OUTPUT" | tee -a "$LOG_FILE"
-
-    # Erfolg nur melden, wenn Exit-Code 0
-    if [ $SYNC_EXIT_CODE -eq 0 ]; then
+    # Sync direkt ausführen, Exit-Code korrekt prüfen
+    if vdirsyncer sync icloud_synology 2>&1 | tee -a "$LOG_FILE"; then
         echo "✅ Sync erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
     else
         echo "❌ Sync fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
