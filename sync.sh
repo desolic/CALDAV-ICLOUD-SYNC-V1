@@ -9,9 +9,6 @@ STATUS_DIR="$CONFIG_DIR/status"
 LOG_DIR="$CONFIG_DIR/logs"
 LOG_FILE="$LOG_DIR/sync.log"
 
-# Container-Startmeldung
-echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
-
 # Logs-Verzeichnis erstellen
 mkdir -p "$LOG_DIR"
 if [ -d "$LOG_DIR" ]; then
@@ -41,6 +38,9 @@ if [ ! -f "$CONFIG_PATH" ]; then
         echo "❌ Config-Template nicht gefunden: $TEMPLATE_PATH" | tee -a "$LOG_FILE"
         exit 1
     fi
+
+# Container-Startmeldung
+echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
 
     # Prüfen, ob envsubst verfügbar ist
     if ! command -v envsubst &> /dev/null; then
