@@ -2,18 +2,19 @@
 status_path = "${STATUS_DIR}"
 
 [pair icloud_synology]
-a = iCloud
-b = Synology
+a = "iCloud"
+b = "Synology"
 collections = ["from a", "from b"]
+conflict_resolution = "a"
 
 [storage iCloud]
-type = caldav
-url = https://caldav.icloud.com/
-username = ${APPLE_ID}
-password = ${APPLE_APP_PASSWORD}
+type = "caldav"
+url = "https://caldav.icloud.com/"
+username = "${APPLE_ID}"
+password = "${APPLE_APP_PASSWORD}"
 
 [storage Synology]
-type = caldav
-url = ${SYNOLGY_CALDAV_URL}
-username = ${SYNOLGY_USER}
-password = ${SYNOLGY_PASSWORD}
+type = "caldav"
+url = "${SYNOLGY_CALDAV_URL}"
+username = "${SYNOLGY_USER}"
+password = "${SYNOLGY_PASSWORD}"
