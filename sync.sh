@@ -23,6 +23,9 @@ LOG_FILE="$LOG_DIR/sync.log"
 touch "$LOG_FILE" || { echo "❌ Log-Datei konnte nicht erstellt werden: $LOG_FILE"; exit 1; }
 echo "✅ Log-Datei bereit: $LOG_FILE"
 
+# Container-Startmeldung
+echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
+
 # Status-Verzeichnis erstellen
 if mkdir -p "$STATUS_DIR"; then
     echo "✅ Status-Verzeichnis erstellt: $STATUS_DIR" | tee -a "$LOG_FILE"
@@ -38,9 +41,6 @@ if [ ! -f "$CONFIG_PATH" ]; then
         echo "❌ Config-Template nicht gefunden: $TEMPLATE_PATH" | tee -a "$LOG_FILE"
         exit 1
     fi
-
-# Container-Startmeldung
-echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
 
     # Prüfen, ob envsubst verfügbar ist
     if ! command -v envsubst &> /dev/null; then
