@@ -102,7 +102,7 @@ DISCOVER_EXIT_CODE=$?
 echo "$DISCOVER_OUTPUT" | tee -a "$LOG_FILE"
 
 # Prüfen auf Errors im Output
-if [ $DISCOVER_EXIT_CODE -eq 0 ] && ! echo "$DISCOVER_OUTPUT" | grep -qE '^(critical:|error:|warning:)'; then
+if [ $DISCOVER_EXIT_CODE -eq 0 ] && ! echo "$DISCOVER_OUTPUT" | grep -qiE 'critical:|error:|warning:'; then
     echo "✅ Discovery erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
 else
     echo "❌ Discovery fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
@@ -122,8 +122,8 @@ while true; do
     # Ausgabe immer ins Log schreiben
     echo "$SYNC_OUTPUT" | tee -a "$LOG_FILE"
 
-    # Erfolg nur melden, wenn kein kritischer Fehler und Exit-Code 0
-    if [ $SYNC_EXIT_CODE -eq 0 ] && ! echo "$SYNC_OUTPUT" | grep -q '^(critical:|error:|warning:)'; then
+    # Prüfen auf Errors im Output
+    if [ $SYNC_EXIT_CODE -eq 0 ] && ! echo "$SYNC_OUTPUT" | grep -qiE 'critical:|error:|warning:'; then
         echo "✅ Sync erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
     else
         echo "❌ Sync fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
