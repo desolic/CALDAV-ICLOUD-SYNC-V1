@@ -78,7 +78,7 @@ else
     echo "❌ Fehler beim Setzen des Symlinks" | tee -a "$LOG_FILE"
 fi
 
-# Debug: Nur die ersten 20 Zeilen der Config prüfen
+# Debug: Nur die ersten 5 Zeilen der Config prüfen
 echo "🔍 Erste 5 Zeilen der Config:" | tee -a "$LOG_FILE"
 if [ -s "$CONFIG_PATH" ]; then
     head -n 5 "$CONFIG_PATH" | tee -a "$LOG_FILE"
@@ -90,6 +90,17 @@ fi
 if ! command -v vdirsyncer &> /dev/null; then
     echo "❌ vdirsyncer nicht gefunden" | tee -a "$LOG_FILE"
     exit 1
+fi
+
+# Einmalige Discovery durchführen, falls Status-Ordner leer ist
+if [ -z "$(ls -A "$STATUS_DIR")" ]; then
+    echo "🔍 Führe einmalige Discovery durch..." | tee -a "$LOG_FILE"
+    if vdirsyncer discover icloud_synology 2>&1 | tee -a "$LOG_FILE"; then
+        echo "✅ Discovery erfolgreich abgeschlossen" | tee -a "$LOG_FILE"
+    else
+        echo "❌ Discovery fehlgeschlagen" | tee -a "$LOG_FILE"
+        exit 1
+    fi
 fi
 
 # Bidirektionalen Sync starten

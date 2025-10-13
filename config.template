@@ -5,7 +5,7 @@ status_path = "${STATUS_DIR}"
 a = "iCloud"
 b = "Synology"
 collections = ["from a", "from b"]
-conflict_resolution = "a"
+conflict_resolution = "a wins"
 
 [storage iCloud]
 type = "caldav"
