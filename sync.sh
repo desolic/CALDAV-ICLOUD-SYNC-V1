@@ -24,7 +24,7 @@ touch "$LOG_FILE" || { echo "❌ Log-Datei konnte nicht erstellt werden: $LOG_FI
 echo "✅ Log-Datei bereit: $LOG_FILE"
 
 # Container-Startmeldung
-echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
+echo "🚀 Initialisiert am $(date)" | tee -a "$LOG_FILE"
 
 # Status-Verzeichnis erstellen
 if mkdir -p "$STATUS_DIR"; then
@@ -46,12 +46,6 @@ if [ ! -f "$CONFIG_PATH" ]; then
     if ! command -v envsubst &> /dev/null; then
         echo "❌ envsubst nicht gefunden, bitte gettext installieren" | tee -a "$LOG_FILE"
         exit 1
-    fi
-
-     # Prüfen, ob vdirsyncer verfügbar ist
-     if ! command -v vdirsyncer &> /dev/null; then
-     echo "❌ vdirsyncer nicht gefunden, bitte wende dich an den Admin" | tee -a "$LOG_FILE"
-     exit 1
     fi
 
     # Config aus Template erzeugen, Variablen ersetzen
@@ -104,7 +98,7 @@ echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE
 while true; do
     echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
 
-    if vdirsyncer sync icloud-synology --force-a 2>&1 | tee -a "$LOG_FILE"; then
+    if vdirsyncer sync icloud_synology --force-a 2>&1 | tee -a "$LOG_FILE"; then
         echo "✅ Sync erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
     else
         echo "❌ Sync fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"

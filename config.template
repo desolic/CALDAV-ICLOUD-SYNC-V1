@@ -1,7 +1,7 @@
 [general]
-status_path = /config/status/
+status_path = "${STATUS_DIR}"
 
-[pair icloud-synology]
+[pair icloud_synology]
 a = iCloud
 b = Synology
 collections = ["from a", "from b"]
