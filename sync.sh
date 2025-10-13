@@ -1,44 +1,47 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-# Pfade
 CONFIG_DIR="/config"
 CONFIG_PATH="$CONFIG_DIR/config"
 TEMPLATE_PATH="/config.template"
-LOG_DIR="$CONFIG_DIR/logs"
 STATUS_DIR="$CONFIG_DIR/status"
-
-# Ordner erstellen
-mkdir -p "$CONFIG_DIR" "$LOG_DIR" "$STATUS_DIR"
-echo "✅ Ordner erstellt: $CONFIG_DIR, $LOG_DIR, $STATUS_DIR"
-
+LOG_DIR="$CONFIG_DIR/logs"
 LOG_FILE="$LOG_DIR/sync.log"
 
-# Config erstellen oder vorhandene Config verwenden
+echo "🟢 Container gestartet"
+
+# Logs- und Statusverzeichnis erstellen
+mkdir -p "$LOG_DIR"
+echo "✅ Logs-Verzeichnis erstellt: $LOG_DIR"
+mkdir -p "$STATUS_DIR"
+echo "✅ Status-Verzeichnis erstellt: $STATUS_DIR"
+
+# Config erzeugen
 if [ ! -f "$CONFIG_PATH" ]; then
-    echo "⚙️  Keine Konfiguration gefunden, erstelle neue aus Template ..." | tee -a "$LOG_FILE"
-    
-    # Variablen aus Template ersetzen und als config speichern
-    envsubst < "$TEMPLATE_PATH" > "$CONFIG_PATH"
-    echo "✅ Config aus Template erstellt: $CONFIG_PATH" | tee -a "$LOG_FILE"
-    
-    echo "🔍 Führe automatische iCloud-Discovery durch ..." | tee -a "$LOG_FILE"
-    vdirsyncer discover --config "$CONFIG_PATH" 2>&1 | tee -a "$LOG_FILE" || \
-        echo "⚠️  Discovery konnte nicht abgeschlossen werden, bitte Config prüfen." | tee -a "$LOG_FILE"
-    echo "✅ Discovery abgeschlossen" | tee -a "$LOG_FILE"
-else
-    echo "ℹ️  Vorhandene Config gefunden: $CONFIG_PATH" | tee -a "$LOG_FILE"
+    echo "⚙️  Keine Config gefunden, erstelle aus Template..." | tee -a "$LOG_FILE"
+
+    if [ ! -f "$TEMPLATE_PATH" ]; then
+        echo "❌ Config-Template nicht gefunden: $TEMPLATE_PATH" | tee -a "$LOG_FILE"
+        exit 1
+    fi
+
+    # Platzhalter mit Variablen ersetzen
+    envsubst '${APPLE_ID} ${APPLE_APP_PASSWORD} ${SYNOLGY_CALDAV_URL} ${SYNOLGY_USER} ${SYNOLGY_PASSWORD}' \
+        < "$TEMPLATE_PATH" > "$CONFIG_PATH"
+
+    echo "✅ Config erstellt: $CONFIG_PATH" | tee -a "$LOG_FILE"
 fi
 
-echo "🚀 Starte bidirektionalen Synchronisation alle 30 Sekunden ..." | tee -a "$LOG_FILE"
+echo "🔍 Inhalt der Config:"
+cat "$CONFIG_PATH" | tee -a "$LOG_FILE"
+
+# Bidirektionalen Sync starten (iCloud gewinnt bei Konflikten)
+echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE"
 
 while true; do
     echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
-    
-    # Synology gewinnt bei Konflikten
-    vdirsyncer sync --config "$CONFIG_PATH" icloud-synology --force-b-direction 2>&1 | tee -a "$LOG_FILE"
-    
-    echo "✅ Sync abgeschlossen: $(date)" | tee -a "$LOG_FILE"
-    echo "⏱ Warten 30 Sekunden ..." | tee -a "$LOG_FILE"
+    vdirsyncer sync icloud-synology --force-a --config "$CONFIG_PATH" 2>&1 | tee -a "$LOG_FILE"
+    echo "✅ Sync abgeschlossen" | tee -a "$LOG_FILE"
+    echo "⏱ Warte 30 Sekunden ..." | tee -a "$LOG_FILE"
     sleep 30
 done

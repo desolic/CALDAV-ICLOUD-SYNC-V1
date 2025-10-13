@@ -23,7 +23,7 @@ COPY config.template /config.template
 RUN chmod +x /usr/local/bin/sync.sh
 
 # VDIRSYNCER_CONFIG auf den gemounteten Ordner zeigen
-ENV VDIRSYNCER_CONFIG=/config/config
+ENV VDIRSYNCER_CONFIG=/config
 
 # Startbefehl
 CMD ["/usr/local/bin/sync.sh"]
