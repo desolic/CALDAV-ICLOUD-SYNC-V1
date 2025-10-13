@@ -7,6 +7,10 @@ CONFIG_PATH="$CONFIG_DIR/config"
 TEMPLATE_PATH="/config.template"
 STATUS_DIR="$CONFIG_DIR/status"
 LOG_DIR="$CONFIG_DIR/logs"
+LOG_FILE="$LOG_DIR/sync.log"
+
+# Container-Startmeldung
+echo "🚀 Container gestartet am $(date)" | tee -a "$LOG_FILE"
 
 # Logs-Verzeichnis erstellen
 mkdir -p "$LOG_DIR"
@@ -23,12 +27,10 @@ touch "$LOG_FILE" || { echo "❌ Log-Datei konnte nicht erstellt werden: $LOG_FI
 echo "✅ Log-Datei bereit: $LOG_FILE"
 
 # Status-Verzeichnis erstellen
-mkdir -p "$STATUS_DIR"
-if [ -d "$STATUS_DIR" ]; then
+if mkdir -p "$STATUS_DIR"; then
     echo "✅ Status-Verzeichnis erstellt: $STATUS_DIR" | tee -a "$LOG_FILE"
 else
-    echo "❌ Status-Verzeichnis konnte nicht erstellt werden: $STATUS_DIR" | tee -a "$LOG_FILE"
-    exit 1
+    echo "❌ Fehler beim Erstellen des Status-Verzeichnisses: $STATUS_DIR" | tee -a "$LOG_FILE"
 fi
 
 # Config erstellen oder aktualisieren
@@ -40,24 +42,61 @@ if [ ! -f "$CONFIG_PATH" ]; then
         exit 1
     fi
 
-    # Config aus Template erzeugen und Variablen ersetzen
-    if ! envsubst '${APPLE_ID} ${APPLE_APP_PASSWORD} ${SYNOLGY_CALDAV_URL} ${SYNOLGY_USER} ${SYNOLGY_PASSWORD}' < "$TEMPLATE_PATH" > "$CONFIG_PATH"; then
+    # Prüfen, ob envsubst verfügbar ist
+    if ! command -v envsubst &> /dev/null; then
+        echo "❌ envsubst nicht gefunden, bitte gettext installieren" | tee -a "$LOG_FILE"
+        exit 1
+    fi
+
+     # Prüfen, ob vdirsyncer verfügbar ist
+     if ! command -v vdirsyncer &> /dev/null; then
+     echo "❌ vdirsyncer nicht gefunden, bitte wende dich an den Admin" | tee -a "$LOG_FILE"
+     exit 1
+    fi
+
+    # Config aus Template erzeugen, Variablen ersetzen
+    if envsubst '${APPLE_ID} ${APPLE_APP_PASSWORD} ${SYNOLGY_CALDAV_URL} ${SYNOLGY_USER} ${SYNOLGY_PASSWORD}' < "$TEMPLATE_PATH" > "$CONFIG_PATH"; then
+        echo "✅ Config erstellt: $CONFIG_PATH" | tee -a "$LOG_FILE"
+    else
         echo "❌ Fehler beim Erstellen der Config: $CONFIG_PATH" | tee -a "$LOG_FILE"
         exit 1
     fi
-    echo "✅ Config erstellt: $CONFIG_PATH" | tee -a "$LOG_FILE"
 else
     echo "ℹ️  Config bereits vorhanden: $CONFIG_PATH" | tee -a "$LOG_FILE"
 fi
 
-# Symlink für vdirsyncer setzen
-mkdir -p /root/.config/vdirsyncer
-ln -sf "$CONFIG_PATH" /root/.config/vdirsyncer/config
-echo "✅ Symlink für vdirsyncer gesetzt: /root/.config/vdirsyncer/config -> $CONFIG_PATH" | tee -a "$LOG_FILE"
+# Prüfen, ob Config lesbar ist
+if [ ! -r "$CONFIG_PATH" ]; then
+    echo "❌ Config nicht lesbar: $CONFIG_PATH" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# Inhalt der Config ausgeben
-echo "🔍 Inhalt der Config:" | tee -a "$LOG_FILE"
-cat "$CONFIG_PATH" | tee -a "$LOG_FILE"
+# vdirsyncer Standardpfad vorbereiten
+if mkdir -p /root/.config/vdirsyncer; then
+    echo "✅ vdirsyncer Config-Ordner erstellt" | tee -a "$LOG_FILE"
+else
+    echo "❌ Fehler beim Erstellen von /root/.config/vdirsyncer" | tee -a "$LOG_FILE"
+fi
+
+if ln -sf "$CONFIG_PATH" /root/.config/vdirsyncer/config; then
+    echo "✅ Symlink gesetzt: /root/.config/vdirsyncer/config -> $CONFIG_PATH" | tee -a "$LOG_FILE"
+else
+    echo "❌ Fehler beim Setzen des Symlinks" | tee -a "$LOG_FILE"
+fi
+
+# Debug: Nur die ersten 20 Zeilen der Config prüfen
+echo "🔍 Erste 5 Zeilen der Config:" | tee -a "$LOG_FILE"
+if [ -s "$CONFIG_PATH" ]; then
+    head -n 5 "$CONFIG_PATH" | tee -a "$LOG_FILE"
+else
+    echo "⚠️ Config ist leer!" | tee -a "$LOG_FILE"
+fi
+
+# Prüfen ob vdirsyncer verfügbar ist
+if ! command -v vdirsyncer &> /dev/null; then
+    echo "❌ vdirsyncer nicht gefunden" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
 # Bidirektionalen Sync starten
 echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE"
@@ -65,10 +104,17 @@ echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE
 while true; do
     echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
 
-    if vdirsyncer sync icloud-synology --force-a --config "$CONFIG_PATH" 2>&1 | tee -a "$LOG_FILE"; then
+    if vdirsyncer sync icloud-synology --force-a 2>&1 | tee -a "$LOG_FILE"; then
         echo "✅ Sync erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
     else
-        echo "❌ Fehler während des Syncs: $(date)" | tee -a "$LOG_FILE"
+        echo "❌ Sync fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
+    fi
+
+    # Prüfen, ob Status-Ordner existiert und beschreibbar ist
+    if [ ! -d "$STATUS_DIR" ] || [ ! -w "$STATUS_DIR" ]; then
+        echo "❌ Status-Ordner nicht vorhanden oder nicht beschreibbar: $STATUS_DIR" | tee -a "$LOG_FILE"
+    else
+        echo "ℹ️ Status-Ordner OK: $STATUS_DIR" | tee -a "$LOG_FILE"
     fi
 
     echo "⏱ Warten 30 Sekunden ..." | tee -a "$LOG_FILE"
