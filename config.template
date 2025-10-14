@@ -1,5 +1,5 @@
 [general]
-status_path = "${STATUS_DIR}"
+status_path = "/config/status"
 
 [pair icloud_synology]
 a = "iCloud"
