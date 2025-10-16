@@ -12,7 +12,7 @@ LOG_FILE="$LOG_DIR/sync.log"
 mkdir -p "$LOG_DIR"
 [ -d "$LOG_DIR" ] && echo "✅ Logs-Verzeichnis erstellt: $LOG_DIR" || { echo "❌ Logs-Verzeichnis konnte nicht erstellt werden: $LOG_DIR"; exit 1; }
 
-# Log-Datei definieren
+# Log-Datei bereitstellen
 touch "$LOG_FILE" || { echo "❌ Log-Datei konnte nicht erstellt werden: $LOG_FILE"; exit 1; }
 echo "✅ Log-Datei bereit: $LOG_FILE"
 
@@ -47,51 +47,57 @@ command -v vdirsyncer >/dev/null 2>&1 || { echo "❌ vdirsyncer nicht gefunden" 
 
 # Einmalige Discovery nur beim ersten Start
 if [ ! -f "$STATUS_DIR/discovery_done" ]; then
-    echo "🔍 Discovery gestartet..." | tee -a "$LOG_FILE"
-    DISCOVER_OUTPUT=$(vdirsyncer discover icloud_synology 2>&1)
-    echo "$DISCOVER_OUTPUT" | tee -a "$LOG_FILE"
-    [ $? -ne 0 ] && { echo "❌ Discovery fehlgeschlagen" | tee -a "$LOG_FILE"; exit 1; }
+    echo "🚀 Discovery gestartet am $(date)" | tee -a "$LOG_FILE"
 
-    # iCloud-Kalender auflisten
-    echo "Bitte wähle die iCloud-Kalender aus (Mehrfachauswahl durch Komma getrennt):"
-    ICLOUD_IDS=()
-    i=1
-    declare -A ICLOUD_MAP
-    while read -r line; do
-        CAL_ID=$(echo "$line" | awk '{print $1}')
-        CAL_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
-        [ -n "$CAL_ID" ] && [ -n "$CAL_NAME" ] && echo "[$i] $CAL_NAME" && ICLOUD_MAP[$i]="$CAL_ID" && ((i++))
-    done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'iCloud:' | grep '"')
+    # Prüfen, ob Login-Daten gesetzt sind
+    if grep -qE '^\s*username\s*=\s*"\$\{APPLE_ID\}"' "$CONFIG_PATH" || grep -qE '^\s*password\s*=\s*"\$\{APPLE_APP_PASSWORD\}"' "$CONFIG_PATH"; then
+        echo "❌ Login-Daten für iCloud fehlen, Discovery kann nicht durchgeführt werden." | tee -a "$LOG_FILE"
+    else
+        DISCOVER_OUTPUT=$(vdirsyncer discover icloud_synology 2>&1)
+        echo "$DISCOVER_OUTPUT" | tee -a "$LOG_FILE"
+        [ $? -ne 0 ] && { echo "❌ Discovery fehlgeschlagen, bitte Login-Daten prüfen" | tee -a "$LOG_FILE"; exit 1; }
 
-    read -p "Nummern der iCloud-Kalender: " INPUT
-    [ -z "$INPUT" ] && { echo "Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
-
-    COLLECTIONS=()
-    for NUM in $(echo "$INPUT" | tr ',' ' '); do
-        ICAL=${ICLOUD_MAP[$NUM]}
-        echo "Wähle den Synology-Zielkalender für $ICAL:"
-        j=1
-        declare -A SYNO_MAP
+        # iCloud-Kalender auflisten
+        echo "⚙️ Bitte wähle die iCloud-Kalender aus (Mehrfachauswahl durch Komma getrennt):"
+        ICLOUD_IDS=()
+        i=1
+        declare -A ICLOUD_MAP
         while read -r line; do
-            SYNO_ID=$(echo "$line" | awk '{print $1}')
-            SYNO_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
-            [ -n "$SYNO_ID" ] && [ -n "$SYNO_NAME" ] && echo "[$j] $SYNO_NAME" && SYNO_MAP[$j]="$SYNO_ID" && ((j++))
-        done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'Synology:' | grep '"')
+            CAL_ID=$(echo "$line" | awk '{print $1}')
+            CAL_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
+            [ -n "$CAL_ID" ] && [ -n "$CAL_NAME" ] && echo "[$i] $CAL_NAME" && ICLOUD_MAP[$i]="$CAL_ID" && ((i++))
+        done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'iCloud:' | grep '"')
 
-        read -p "Nummer des Zielkalenders: " SYN_NUM
-        [ -z "$SYN_NUM" ] && { echo "Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
-        COLLECTIONS+=("[\"$ICAL\",\"${SYNO_MAP[$SYN_NUM]}\"]")
-    done
+        read -p "⚙️ Nummern der iCloud-Kalender: " INPUT
+        [ -z "$INPUT" ] && { echo "❌ Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
 
-    # Collections in Config schreiben
-    sed -i '/collections = /c\collections = ['"$(IFS=, ; echo "${COLLECTIONS[*]}")"']' "$CONFIG_PATH"
-    echo "✅ Discovery abgeschlossen, Config aktualisiert" | tee -a "$LOG_FILE"
+        COLLECTIONS=()
+        for NUM in $(echo "$INPUT" | tr ',' ' '); do
+            ICAL=${ICLOUD_MAP[$NUM]}
+            echo "⚙️ Bitte wähle den Synology-Zielkalender für $ICAL:"
+            j=1
+            declare -A SYNO_MAP
+            while read -r line; do
+                SYNO_ID=$(echo "$line" | awk '{print $1}')
+                SYNO_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
+                [ -n "$SYNO_ID" ] && [ -n "$SYNO_NAME" ] && echo "[$j] $SYNO_NAME" && SYNO_MAP[$j]="$SYNO_ID" && ((j++))
+            done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'Synology:' | grep '"')
 
-    touch "$STATUS_DIR/discovery_done"
+            read -p "⚙️ Nummer des Zielkalenders: " SYN_NUM
+            [ -z "$SYN_NUM" ] && { echo "❌ Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
+            COLLECTIONS+=("[\"$ICAL\",\"${SYNO_MAP[$SYN_NUM]}\"]")
+        done
+
+        # Collections in Config schreiben
+        sed -i '/collections = /c\collections = ['"$(IFS=, ; echo "${COLLECTIONS[*]}")"']' "$CONFIG_PATH"
+        echo "✅ Discovery abgeschlossen, Config aktualisiert" | tee -a "$LOG_FILE"
+
+        touch "$STATUS_DIR/discovery_done"
+    fi
 fi
 
 # Bidirektionaler Sync starten
-echo "🚀 Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE"
+echo "⚙️ Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE"
 
 while true; do
     echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
