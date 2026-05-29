@@ -1,116 +1,91 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
 
-# Pfade
+# ---- Privilegien-Drop (Synology-Bind-Mounts) -------------------------------
+# Als root gestartet: /config dem unprivilegierten User uebereignen, dann droppen.
+PUID="${PUID:-10001}"
+PGID="${PGID:-10001}"
+if [ "$(id -u)" = "0" ]; then
+  groupmod -o -g "$PGID" sync 2>/dev/null || true
+  usermod -o -u "$PUID" sync 2>/dev/null || true
+  mkdir -p /config
+  chown -R sync:sync /config /home/sync
+  exec gosu sync:sync "$0" "$@"
+fi
+
+# ---- Ab hier: unprivilegiert -----------------------------------------------
+export HOME=/home/sync
 CONFIG_DIR="/config"
-CONFIG_PATH="$CONFIG_DIR/config"
-TEMPLATE_PATH="/config.template"
-STATUS_DIR="$CONFIG_DIR/status"
-LOG_DIR="$CONFIG_DIR/logs"
-LOG_FILE="$LOG_DIR/sync.log"
+STATUS_DIR="${CONFIG_DIR}/status"
+LOG_DIR="${CONFIG_DIR}/logs"
+LOG_FILE="${LOG_DIR}/sync.log"
+VDIRSYNCER_DIR="${HOME}/.config/vdirsyncer"   # ephemer, NICHT auf dem Volume
+CONFIG_PATH="${VDIRSYNCER_DIR}/config"
+export VDIRSYNCER_CONFIG="${CONFIG_PATH}"
 
-# Logs-Verzeichnis erstellen
-mkdir -p "$LOG_DIR"
-[ -d "$LOG_DIR" ] && echo "✅ Logs-Verzeichnis erstellt: $LOG_DIR" || { echo "❌ Logs-Verzeichnis konnte nicht erstellt werden: $LOG_DIR"; exit 1; }
+SYNC_INTERVAL="${SYNC_INTERVAL:-300}"         # Sekunden zwischen den Syncs
+LOG_MAX_BYTES="${LOG_MAX_BYTES:-5242880}"     # 5 MiB, danach Rotation
+LOG_KEEP="${LOG_KEEP:-3}"                      # Anzahl rotierter Dateien
 
-# Log-Datei bereitstellen
-touch "$LOG_FILE" || { echo "❌ Log-Datei konnte nicht erstellt werden: $LOG_FILE"; exit 1; }
-echo "✅ Log-Datei bereit: $LOG_FILE"
+mkdir -p "$STATUS_DIR" "$LOG_DIR" "$VDIRSYNCER_DIR"
 
-# Container-Startmeldung
-echo "🚀 Initialisiert am $(date)" | tee -a "$LOG_FILE"
+log() {
+  printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*" | tee -a "$LOG_FILE"
+}
 
-# Status-Verzeichnis erstellen
-mkdir -p "$STATUS_DIR" && echo "✅ Status-Verzeichnis erstellt: $STATUS_DIR" | tee -a "$LOG_FILE"
+rotate_log() {
+  [ -f "$LOG_FILE" ] || return 0
+  local size
+  size=$(stat -c%s "$LOG_FILE" 2>/dev/null || echo 0)
+  [ "$size" -le "$LOG_MAX_BYTES" ] && return 0
+  local i
+  for ((i = LOG_KEEP - 1; i >= 1; i--)); do
+    [ -f "${LOG_FILE}.$i" ] && mv -f "${LOG_FILE}.$i" "${LOG_FILE}.$((i + 1))" || true
+  done
+  mv -f "$LOG_FILE" "${LOG_FILE}.1"
+  : >"$LOG_FILE"
+}
 
-# Config erstellen oder aktualisieren
-if [ ! -f "$CONFIG_PATH" ]; then
-    echo "⚙️  Keine Config gefunden, erstelle aus Template..." | tee -a "$LOG_FILE"
-    [ -f "$TEMPLATE_PATH" ] || { echo "❌ Config-Template nicht gefunden: $TEMPLATE_PATH" | tee -a "$LOG_FILE"; exit 1; }
-    command -v envsubst >/dev/null || { echo "❌ envsubst nicht gefunden, bitte gettext installieren" | tee -a "$LOG_FILE"; exit 1; }
-    envsubst '${APPLE_ID} ${APPLE_APP_PASSWORD} ${SYNOLGY_CALDAV_URL} ${SYNOLGY_USER} ${SYNOLGY_PASSWORD}' < "$TEMPLATE_PATH" > "$CONFIG_PATH" \
-        && echo "✅ Config erstellt: $CONFIG_PATH" | tee -a "$LOG_FILE"
+trap 'log "🛑 Beendet ($(date))"; exit 0' TERM INT
+
+log "🚀 Initialisiert ($(date)) - User $(id -un) ($(id -u):$(id -g))"
+
+# ---- Config erzeugen (chmod 600, keine Klartext-Persistenz auf dem Volume) --
+log "🔐 Erzeuge vdirsyncer-Config ..."
+if ! python3 /usr/local/bin/render_config.py >"$CONFIG_PATH"; then
+  log "❌ Config-Erzeugung fehlgeschlagen (siehe Fehler oben)."
+  exit 1
 fi
+chmod 600 "$CONFIG_PATH"
 
-# Prüfen ob Config lesbar ist
-[ -r "$CONFIG_PATH" ] || { echo "❌ Config nicht lesbar: $CONFIG_PATH" | tee -a "$LOG_FILE"; exit 1; }
-
-# vdirsyncer Standardpfad vorbereiten
-mkdir -p /root/.config/vdirsyncer && echo "✅ vdirsyncer Config-Ordner erstellt" | tee -a "$LOG_FILE"
-ln -sf "$CONFIG_PATH" /root/.config/vdirsyncer/config && echo "✅ Symlink gesetzt: /root/.config/vdirsyncer/config -> $CONFIG_PATH" | tee -a "$LOG_FILE"
-
-# Debug: Erste 5 Zeilen der Config
-echo "🔍 Erste 5 Zeilen der Config:" | tee -a "$LOG_FILE"
-[ -s "$CONFIG_PATH" ] && head -n 5 "$CONFIG_PATH" | tee -a "$LOG_FILE"
-
-# Prüfen ob vdirsyncer verfügbar ist
-command -v vdirsyncer >/dev/null 2>&1 || { echo "❌ vdirsyncer nicht gefunden" | tee -a "$LOG_FILE"; exit 1; }
-
-# Einmalige Discovery nur beim ersten Start
-if [ ! -f "$STATUS_DIR/discovery_done" ]; then
-    echo "🚀 Discovery gestartet am $(date)" | tee -a "$LOG_FILE"
-
-    # Prüfen, ob Login-Daten gesetzt sind
-    if grep -qE '^\s*username\s*=\s*"\$\{APPLE_ID\}"' "$CONFIG_PATH" || grep -qE '^\s*password\s*=\s*"\$\{APPLE_APP_PASSWORD\}"' "$CONFIG_PATH"; then
-        echo "❌ Login-Daten für iCloud fehlen, Discovery kann nicht durchgeführt werden." | tee -a "$LOG_FILE"
-    else
-        DISCOVER_OUTPUT=$(vdirsyncer discover icloud_synology 2>&1)
-        echo "$DISCOVER_OUTPUT" | tee -a "$LOG_FILE"
-        [ $? -ne 0 ] && { echo "❌ Discovery fehlgeschlagen, bitte Login-Daten prüfen" | tee -a "$LOG_FILE"; exit 1; }
-
-        # iCloud-Kalender auflisten
-        echo "⚙️ Bitte wähle die iCloud-Kalender aus (Mehrfachauswahl durch Komma getrennt):"
-        ICLOUD_IDS=()
-        i=1
-        declare -A ICLOUD_MAP
-        while read -r line; do
-            CAL_ID=$(echo "$line" | awk '{print $1}')
-            CAL_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
-            [ -n "$CAL_ID" ] && [ -n "$CAL_NAME" ] && echo "[$i] $CAL_NAME" && ICLOUD_MAP[$i]="$CAL_ID" && ((i++))
-        done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'iCloud:' | grep '"')
-
-        read -p "⚙️ Nummern der iCloud-Kalender: " INPUT
-        [ -z "$INPUT" ] && { echo "❌ Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
-
-        COLLECTIONS=()
-        for NUM in $(echo "$INPUT" | tr ',' ' '); do
-            ICAL=${ICLOUD_MAP[$NUM]}
-            echo "⚙️ Bitte wähle den Synology-Zielkalender für $ICAL:"
-            j=1
-            declare -A SYNO_MAP
-            while read -r line; do
-                SYNO_ID=$(echo "$line" | awk '{print $1}')
-                SYNO_NAME=$(echo "$line" | sed -n 's/.*("\(.*\)").*/\1/p')
-                [ -n "$SYNO_ID" ] && [ -n "$SYNO_NAME" ] && echo "[$j] $SYNO_NAME" && SYNO_MAP[$j]="$SYNO_ID" && ((j++))
-            done < <(echo "$DISCOVER_OUTPUT" | grep -A20 'Synology:' | grep '"')
-
-            read -p "⚙️ Nummer des Zielkalenders: " SYN_NUM
-            [ -z "$SYN_NUM" ] && { echo "❌ Keine Auswahl getroffen, Discovery abgebrochen" | tee -a "$LOG_FILE"; exit 1; }
-            COLLECTIONS+=("[\"$ICAL\",\"${SYNO_MAP[$SYN_NUM]}\"]")
-        done
-
-        # Collections in Config schreiben
-        sed -i '/collections = /c\collections = ['"$(IFS=, ; echo "${COLLECTIONS[*]}")"']' "$CONFIG_PATH"
-        echo "✅ Discovery abgeschlossen, Config aktualisiert" | tee -a "$LOG_FILE"
-
-        touch "$STATUS_DIR/discovery_done"
-    fi
+# ---- Discovery (nicht-interaktiv; listet Kalender fuers GUI-Log) ------------
+log "🔎 Discovery ..."
+if ! discover_out=$(vdirsyncer discover icloud_synology 2>&1); then
+  log "❌ Discovery fehlgeschlagen - Zugangsdaten/URL pruefen:"
+  log "$discover_out"
+  exit 1
 fi
+log "$discover_out"
+log "ℹ️  Kalenderauswahl via COLLECTIONS / COLLECTION_MAPPING (GUI-Umgebungsvariablen)."
 
-# Bidirektionaler Sync starten
-echo "⚙️ Starte bidirektionalen Sync alle 30 Sekunden ..." | tee -a "$LOG_FILE"
-
+# ---- Sync-Loop --------------------------------------------------------------
+log "🔁 Sync-Loop (Intervall ${SYNC_INTERVAL}s, Modus ${COLLECTIONS_MODE:-auto})"
 while true; do
-    echo "🔄 Sync gestartet: $(date)" | tee -a "$LOG_FILE"
-    SYNC_OUTPUT=$(vdirsyncer sync icloud_synology 2>&1) || true
-    SYNC_EXIT_CODE=$?
-    echo "$SYNC_OUTPUT" | tee -a "$LOG_FILE"
-    if [ $SYNC_EXIT_CODE -eq 0 ] && ! echo "$SYNC_OUTPUT" | grep -qiE 'critical:|error:|warning:'; then
-        echo "✅ Sync erfolgreich abgeschlossen: $(date)" | tee -a "$LOG_FILE"
-    else
-        echo "❌ Sync fehlgeschlagen: $(date)" | tee -a "$LOG_FILE"
-        echo "⚠️ Bitte Fehlerausgabe prüfen" | tee -a "$LOG_FILE"
-    fi
-    [ ! -d "$STATUS_DIR" ] || [ ! -w "$STATUS_DIR" ] && echo "❌ Status-Ordner nicht vorhanden oder nicht beschreibbar: $STATUS_DIR" | tee -a "$LOG_FILE" || echo "✅ Status-Ordner OK: $STATUS_DIR" | tee -a "$LOG_FILE"
-    echo "⚙️ Warten 30 Sekunden ..." | tee -a "$LOG_FILE"
-    sleep 30
+  rotate_log
+  log "🔄 Sync gestartet"
+  if sync_out=$(vdirsyncer sync icloud_synology 2>&1); then
+    rc=0
+  else
+    rc=$?
+  fi
+  log "$sync_out"
+  if [ "$rc" -eq 0 ] && ! grep -qiE 'error|critical' <<<"$sync_out"; then
+    log "✅ Sync ok"
+  else
+    log "❌ Sync mit Fehlern (rc=$rc)"
+  fi
+  # sleep im Hintergrund + wait, damit SIGTERM den Loop sofort unterbricht
+  sleep "$SYNC_INTERVAL" &
+  wait $!
 done
